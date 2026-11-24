@@ -79,6 +79,16 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 
+@app.get("/")
+def read_root():
+    return {"status": "ok"}
+
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
+
 def compare_words(heard_text, ayah_text):
     cleaned_heard = normalize_arabic(heard_text)
     cleaned_ayah = normalize_arabic(ayah_text)
