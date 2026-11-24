@@ -1,11 +1,11 @@
 import os
 import re
-import shutil
 import subprocess
 import tempfile
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, Form, UploadFile
+from starlette.concurrency import run_in_threadpool
 from rapidfuzz import fuzz
 from transformers import pipeline
 
@@ -126,27 +126,38 @@ def health():
 
 
 @app.post("/check")
-def check(audio: UploadFile = File(...), ayah: str = Form(...)):
+async def check(audio: UploadFile = File(...), ayah: str = Form(...)):
     print(repr(ayah))
-    with tempfile.TemporaryDirectory() as tmpdir:
-        source = os.path.join(tmpdir, "audio.m4a")
-        wav_path = os.path.join(tmpdir, "audio.wav")
 
-        with open(source, "wb") as output:
-            shutil.copyfileobj(audio.file, output)
+    source = tempfile.NamedTemporaryFile(delete=False, suffix=".m4a")
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+    try:
+        # اكتب الملف الصوتي على القرص ثم مرّر المسار إلى النموذج
+        source.write(await audio.read())
+        source.close()
 
-        subprocess.run(
+        temp_file.close()
+        await run_in_threadpool(
+            subprocess.run,
             [
-                "ffmpeg", "-y", "-i", source, "-vn",
-                "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav_path,
+                "ffmpeg", "-y", "-i", source.name, "-vn",
+                "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", temp_file.name,
             ],
             check=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
         )
 
-        result = asr(wav_path, generate_kwargs={"language": "arabic"})
+        result = await run_in_threadpool(
+            asr, temp_file.name, generate_kwargs={"language": "arabic"}
+        )
         heard_text = result["text"]
+    finally:
+        source.close()
+        temp_file.close()
+        for path in (source.name, temp_file.name):
+            if os.path.exists(path):
+                os.remove(path)
 
     percentage, matched, total, missing, extra = compare_words(heard_text, ayah)
     return {
