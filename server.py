@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI):
     global asr
     asr = pipeline(
         "automatic-speech-recognition",
-        model="FaisaI/tadabur-whisper-small",
+        model="openai/whisper-tiny",
     )
     yield
 
